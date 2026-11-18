@@ -1,0 +1,673 @@
+[
+  {
+    "id": "part_b_dashboard",
+    "type": "tab",
+    "label": "B · Cloud weather + dashboard",
+    "disabled": false,
+    "info": "Deploy on the Google Cloud VM. OWM polled every 10 minutes (144/day). Gauges and 1-hour charts read shared global context. Credentials must be configured separately; none are exported."
+  },
+  {
+    "id": "b_note",
+    "z": "part_b_dashboard",
+    "type": "comment",
+    "name": "CLOUD VM · OWM Glasgow → context → MQTT + dashboard",
+    "info": "",
+    "x": 430,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "b_poll",
+    "z": "part_b_dashboard",
+    "type": "inject",
+    "name": "Poll Glasgow · 10 min",
+    "props": [
+      {
+        "p": "topic",
+        "vt": "str"
+      },
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "600",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 2,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 140,
+    "y": 110,
+    "wires": [
+      [
+        "b_owm"
+      ]
+    ]
+  },
+  {
+    "id": "b_owm",
+    "z": "part_b_dashboard",
+    "type": "openweathermap",
+    "name": "OWM Glasgow, GB",
+    "wtype": "current",
+    "lon": "",
+    "lat": "",
+    "city": "Glasgow",
+    "country": "GB",
+    "language": "en",
+    "x": 370,
+    "y": 110,
+    "wires": [
+      [
+        "b_cache"
+      ]
+    ]
+  },
+  {
+    "id": "b_cache",
+    "z": "part_b_dashboard",
+    "type": "function",
+    "name": "Validate + cache FULL OWM",
+    "func": "// Embedded in exported Function nodes: no external JS module is needed on import.\nconst DEVICE_ID = \"dev-thermo-001\";\nconst WEATHER_MAX_AGE = 1800000;\nconst isNumber = (v) => typeof v === \"number\" && Number.isFinite(v);\nconst inRange = (v, min, max) => isNumber(v) && v >= min && v <= max;\nfunction parseObject(value) {\n    if (typeof value === \"string\") {\n        if (value.length > 32768) throw Error(\"Message exceeds 32 KiB\");\n        value = JSON.parse(value);\n    }\n    if (!value || typeof value !== \"object\" || Array.isArray(value)) throw Error(\"Expected a JSON object\");\n    return value;\n}\nfunction validWeather(w) {\n    return w && w.schemaVersion === 1 && w.deviceId === DEVICE_ID &&\n        w.city === \"Glasgow\" && inRange(w.tempc, -60, 60) &&\n        inRange(w.tempMinc, -60, 60) && inRange(w.tempMaxc, -60, 60) &&\n        w.tempMinc <= w.tempc && w.tempc <= w.tempMaxc &&\n        inRange(w.humidity, 0, 100) && typeof w.description === \"string\" &&\n        w.description.length > 0 && w.description.length <= 200 &&\n        inRange(w.sunrise, 1, 1e11) && inRange(w.sunset, 1, 1e11) &&\n        w.sunrise < w.sunset && inRange(w.timestamp, 1e12, Date.now() + 300000) &&\n        inRange(w.receivedAt, 1e12, Date.now() + 300000);\n}\nfunction weatherFresh(w) {\n    return validWeather(w) && Date.now() - w.timestamp <= WEATHER_MAX_AGE &&\n        Date.now() - w.receivedAt <= WEATHER_MAX_AGE;\n}\nfunction validSetpoint(s) {\n    return s && s.schemaVersion === 1 && s.deviceId === DEVICE_ID &&\n        s.unit === \"C\" && inRange(s.setpointC, -10, 35) &&\n        inRange(s.timestamp, 1e12, Date.now() + 300000);\n}\nfunction reject(reason) {\n    node.status({fill:\"yellow\", shape:\"ring\", text:reason});\n    // Do not echo untrusted payloads/credentials into logs.\n    node.warn(reason);\n    return null;\n}\n\n// Prefer the complete OWM response (msg.data) over the palette's truncated tempc.\ntry {\n    const raw = parseObject(msg.data);\n    const kelvinToC = (v) => isNumber(v) ? Number((v - 273.15).toFixed(2)) : NaN;\n    if (raw.sys?.country !== \"GB\" || !/glasgow/i.test(raw.name || \"\")) {\n        return reject(\"Rejected weather for a different city\");\n    }\n    const w = {\n        schemaVersion: 1, deviceId: DEVICE_ID, city: \"Glasgow\",\n        tempc: kelvinToC(raw.main?.temp),\n        tempMinc: kelvinToC(raw.main?.temp_min),\n        tempMaxc: kelvinToC(raw.main?.temp_max),\n        humidity: raw.main?.humidity,\n        description: raw.weather?.[0]?.description,\n        sunrise: raw.sys?.sunrise, sunset: raw.sys?.sunset,\n        timestamp: isNumber(raw.dt) ? raw.dt * 1000 : NaN,\n        receivedAt: Date.now()\n    };\n    if (!weatherFresh(w)) return reject(\"Rejected invalid or stale OWM response\");\n    const previous = global.get(\"thermostat.weather\");\n    if (previous && w.timestamp < previous.timestamp) return reject(\"Ignored older OWM observation\");\n    global.set(\"thermostat.weather\", {...w, raw});\n    let history = global.get(\"thermostat.history\") || [];\n    history = history.filter(p => p.timestamp >= Date.now() - 3600000 && p.timestamp !== w.timestamp);\n    history.push({timestamp:w.timestamp, tempc:w.tempc, humidity:w.humidity});\n    history.sort((a,b) => a.timestamp - b.timestamp);\n    global.set(\"thermostat.history\", history.slice(-720));\n    node.status({fill:\"green\", shape:\"dot\", text:w.tempc + \" C | Glasgow cached\"});\n    return [{payload:JSON.stringify(w)}, {topic:\"weather-updated\"}];\n} catch (_) {\n    return reject(\"Invalid OWM response; keeping last good observation\");\n}\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 620,
+    "y": 110,
+    "wires": [
+      [
+        "b_mqtt_weather"
+      ],
+      [
+        "b_dashboard"
+      ]
+    ]
+  },
+  {
+    "id": "b_mqtt_weather",
+    "z": "part_b_dashboard",
+    "type": "mqtt out",
+    "name": "Glasgow → device · retained",
+    "topic": "glasgow-thermostat/dev-thermo-001/weather/glasgow",
+    "qos": "1",
+    "retain": "true",
+    "respTopic": "",
+    "contentType": "application/json",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "mqtt_server",
+    "x": 940,
+    "y": 110,
+    "wires": []
+  },
+  {
+    "id": "b_mqtt_setpoint",
+    "z": "part_b_dashboard",
+    "type": "mqtt in",
+    "name": "Setpoint ← device",
+    "topic": "glasgow-thermostat/dev-thermo-001/control/setpoint",
+    "qos": "1",
+    "datatype": "json",
+    "broker": "mqtt_server",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 140,
+    "y": 220,
+    "wires": [
+      [
+        "b_setpoint"
+      ]
+    ]
+  },
+  {
+    "id": "b_setpoint",
+    "z": "part_b_dashboard",
+    "type": "function",
+    "name": "Validate + cache setpoint",
+    "func": "// Embedded in exported Function nodes: no external JS module is needed on import.\nconst DEVICE_ID = \"dev-thermo-001\";\nconst WEATHER_MAX_AGE = 1800000;\nconst isNumber = (v) => typeof v === \"number\" && Number.isFinite(v);\nconst inRange = (v, min, max) => isNumber(v) && v >= min && v <= max;\nfunction parseObject(value) {\n    if (typeof value === \"string\") {\n        if (value.length > 32768) throw Error(\"Message exceeds 32 KiB\");\n        value = JSON.parse(value);\n    }\n    if (!value || typeof value !== \"object\" || Array.isArray(value)) throw Error(\"Expected a JSON object\");\n    return value;\n}\nfunction validWeather(w) {\n    return w && w.schemaVersion === 1 && w.deviceId === DEVICE_ID &&\n        w.city === \"Glasgow\" && inRange(w.tempc, -60, 60) &&\n        inRange(w.tempMinc, -60, 60) && inRange(w.tempMaxc, -60, 60) &&\n        w.tempMinc <= w.tempc && w.tempc <= w.tempMaxc &&\n        inRange(w.humidity, 0, 100) && typeof w.description === \"string\" &&\n        w.description.length > 0 && w.description.length <= 200 &&\n        inRange(w.sunrise, 1, 1e11) && inRange(w.sunset, 1, 1e11) &&\n        w.sunrise < w.sunset && inRange(w.timestamp, 1e12, Date.now() + 300000) &&\n        inRange(w.receivedAt, 1e12, Date.now() + 300000);\n}\nfunction weatherFresh(w) {\n    return validWeather(w) && Date.now() - w.timestamp <= WEATHER_MAX_AGE &&\n        Date.now() - w.receivedAt <= WEATHER_MAX_AGE;\n}\nfunction validSetpoint(s) {\n    return s && s.schemaVersion === 1 && s.deviceId === DEVICE_ID &&\n        s.unit === \"C\" && inRange(s.setpointC, -10, 35) &&\n        inRange(s.timestamp, 1e12, Date.now() + 300000);\n}\nfunction reject(reason) {\n    node.status({fill:\"yellow\", shape:\"ring\", text:reason});\n    // Do not echo untrusted payloads/credentials into logs.\n    node.warn(reason);\n    return null;\n}\n\ntry {\n    const value = parseObject(msg.payload);\n    if (!validSetpoint(value)) return reject(\"Rejected invalid setpoint JSON\");\n    const previous = global.get(\"thermostat.setpoint\");\n    if (previous && value.timestamp < previous.timestamp) return reject(\"Ignored older setpoint\");\n    if (previous && value.timestamp === previous.timestamp && value.setpointC !== previous.setpointC) {\n        return reject(\"Conflicting setpoint timestamp\");\n    }\n    // Whitelist fields. Do not persist arbitrary incoming object properties.\n    global.set(\"thermostat.setpoint\", {\n        schemaVersion:1, deviceId:DEVICE_ID, unit:\"C\",\n        setpointC:value.setpointC, timestamp:value.timestamp, receivedAt:Date.now()\n    });\n    node.status({fill:\"green\", shape:\"dot\", text:value.setpointC + \" C received via MQTT\"});\n    return {topic:\"setpoint-updated\"};\n} catch (_) {\n    return reject(\"Malformed setpoint JSON; last good value unchanged\");\n}\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 390,
+    "y": 220,
+    "wires": [
+      [
+        "b_dashboard"
+      ]
+    ]
+  },
+  {
+    "id": "b_restore",
+    "z": "part_b_dashboard",
+    "type": "inject",
+    "name": "Restore widgets / stale check · 60 s",
+    "props": [
+      {
+        "p": "topic",
+        "vt": "str"
+      },
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "60",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 2,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 200,
+    "y": 360,
+    "wires": [
+      [
+        "b_dashboard"
+      ]
+    ]
+  },
+  {
+    "id": "b_ui_connect",
+    "z": "part_b_dashboard",
+    "type": "ui_ui_control",
+    "name": "Browser connects → rehydrate",
+    "events": "connect",
+    "x": 210,
+    "y": 430,
+    "wires": [
+      [
+        "b_dashboard"
+      ]
+    ]
+  },
+  {
+    "id": "b_dashboard",
+    "z": "part_b_dashboard",
+    "type": "function",
+    "name": "Read context → all widgets",
+    "func": "// Embedded in exported Function nodes: no external JS module is needed on import.\nconst DEVICE_ID = \"dev-thermo-001\";\nconst WEATHER_MAX_AGE = 1800000;\nconst isNumber = (v) => typeof v === \"number\" && Number.isFinite(v);\nconst inRange = (v, min, max) => isNumber(v) && v >= min && v <= max;\nfunction parseObject(value) {\n    if (typeof value === \"string\") {\n        if (value.length > 32768) throw Error(\"Message exceeds 32 KiB\");\n        value = JSON.parse(value);\n    }\n    if (!value || typeof value !== \"object\" || Array.isArray(value)) throw Error(\"Expected a JSON object\");\n    return value;\n}\nfunction validWeather(w) {\n    return w && w.schemaVersion === 1 && w.deviceId === DEVICE_ID &&\n        w.city === \"Glasgow\" && inRange(w.tempc, -60, 60) &&\n        inRange(w.tempMinc, -60, 60) && inRange(w.tempMaxc, -60, 60) &&\n        w.tempMinc <= w.tempc && w.tempc <= w.tempMaxc &&\n        inRange(w.humidity, 0, 100) && typeof w.description === \"string\" &&\n        w.description.length > 0 && w.description.length <= 200 &&\n        inRange(w.sunrise, 1, 1e11) && inRange(w.sunset, 1, 1e11) &&\n        w.sunrise < w.sunset && inRange(w.timestamp, 1e12, Date.now() + 300000) &&\n        inRange(w.receivedAt, 1e12, Date.now() + 300000);\n}\nfunction weatherFresh(w) {\n    return validWeather(w) && Date.now() - w.timestamp <= WEATHER_MAX_AGE &&\n        Date.now() - w.receivedAt <= WEATHER_MAX_AGE;\n}\nfunction validSetpoint(s) {\n    return s && s.schemaVersion === 1 && s.deviceId === DEVICE_ID &&\n        s.unit === \"C\" && inRange(s.setpointC, -10, 35) &&\n        inRange(s.timestamp, 1e12, Date.now() + 300000);\n}\nfunction reject(reason) {\n    node.status({fill:\"yellow\", shape:\"ring\", text:reason});\n    // Do not echo untrusted payloads/credentials into logs.\n    node.warn(reason);\n    return null;\n}\n\n// Every widget is populated from context, including on browser reconnect/redeploy.\nconst w = global.get(\"thermostat.weather\");\nconst s = global.get(\"thermostat.setpoint\");\nconst fresh = weatherFresh(w);\nconst gauge = (value) => ({payload:value});\nconst chartEnd = Date.now();\nconst chartStart = chartEnd - 3600000;\nconst chartAxisColor = \"#b4c3c3\";\nconst chartGridColor = \"rgba(180, 195, 195, 0.16)\";\nconst history = (global.get(\"thermostat.history\") || [])\n    .filter(p => p.timestamp >= chartStart && p.timestamp <= chartEnd + 300000);\n\nfunction chart(field, label, min, max, stepSize) {\n    return {\n        payload:[{series:[label],data:[history.map(p => ({x:p.timestamp,y:p[field]}))],labels:[\"\"]}],\n        ui_control:{options:{scales:{\n            xAxes:[{\n                type:\"time\",\n                time:{min:chartStart,max:chartEnd,unit:\"minute\",unitStepSize:15,displayFormats:{minute:\"HH:mm\"}},\n                ticks:{fontColor:chartAxisColor,maxRotation:0,minRotation:0},\n                gridLines:{color:chartGridColor}\n            }],\n            yAxes:[{ticks:{min,max,stepSize,fontColor:chartAxisColor},gridLines:{color:chartGridColor}}]\n        }}}\n    };\n}\n\nreturn [\n    gauge(fresh ? w.tempc : null), gauge(fresh ? w.tempMaxc : null),\n    gauge(fresh ? w.tempMinc : null), gauge(fresh ? w.humidity : null),\n    gauge(validSetpoint(s) ? s.setpointC : null),\n    chart(\"tempc\", \"Glasgow temperature\", -20, 40, 20), chart(\"humidity\", \"Glasgow humidity\", 0, 100, 20),\n    {payload:fresh ? \"Observed \" + new Date(w.timestamp).toLocaleString(\"en-GB\", {timeZone:\"Europe/London\"}) : \"Waiting for current weather\"}\n];\n",
+    "outputs": 8,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 620,
+    "y": 360,
+    "wires": [
+      [
+        "g_current"
+      ],
+      [
+        "g_max"
+      ],
+      [
+        "g_min"
+      ],
+      [
+        "g_humidity"
+      ],
+      [
+        "g_setpoint"
+      ],
+      [
+        "c_temperature"
+      ],
+      [
+        "c_humidity"
+      ],
+      [
+        "b_freshness"
+      ]
+    ]
+  },
+  {
+    "id": "b_freshness",
+    "z": "part_b_dashboard",
+    "type": "ui_text",
+    "group": "group_live",
+    "order": 1,
+    "width": 18,
+    "height": 1,
+    "name": "Source / freshness",
+    "label": "OpenWeatherMap",
+    "format": "{{msg.payload}}",
+    "layout": "row-left",
+    "className": "thermostat-freshness",
+    "x": 960,
+    "y": 610,
+    "wires": []
+  },
+  {
+    "id": "b_dashboard_styles",
+    "z": "part_b_dashboard",
+    "type": "ui_template",
+    "name": "Dashboard styles",
+    "format": "<style>\n#Tab_Glasgow_thermostat {\n    --dash-panel: #1a2021;\n    --dash-card: #202829;\n    --dash-border: #374446;\n    --dash-muted: #b4c3c3;\n    --dash-teal: #83ddd0;\n    --dash-amber: #ffc28f;\n    --dash-gap: .5rem;\n    --dash-radius: .75rem;\n    --dash-gauge-height: 9.5rem;\n    --dash-chart-height: 15.5rem;\n    display: grid;\n    gap: .875rem;\n    width: min(calc(100% - 2rem), 62rem);\n    margin: 1rem auto 1.5rem;\n}\n\n/* Dashboard 3 writes its panel and widget geometry inline. Override it so\n   the native widgets can reflow without horizontal scrolling. */\n#Tab_Glasgow_thermostat,\n#Tab_Glasgow_thermostat .nr-dashboard-cardcontainer {\n    height: auto !important;\n    min-height: 0 !important;\n}\n\n#Tab_Glasgow_thermostat ui-card-panel,\n#Tab_Glasgow_thermostat .nr-dashboard-cardcontainer > * {\n    position: static;\n    min-width: 0;\n}\n\n#Tab_Glasgow_thermostat ui-card-panel {\n    padding: .75rem;\n    background: var(--dash-panel);\n    border: 1px solid var(--dash-border);\n    border-radius: var(--dash-radius);\n}\n\n#Tab_Glasgow_thermostat .nr-dashboard-cardtitle {\n    width: auto !important;\n    min-height: 0;\n    max-height: none;\n    margin: 0 0 .625rem;\n    font-size: 1rem;\n    font-weight: 650;\n}\n\n#Tab_Glasgow_thermostat .nr-dashboard-cardcontainer {\n    display: grid;\n    grid-template-columns: repeat(6, minmax(0, 1fr));\n    gap: var(--dash-gap);\n    width: auto !important;\n}\n\n#Tab_Glasgow_thermostat .thermostat-readings .thermostat-gauge { grid-column: span 2; }\n#Tab_Glasgow_thermostat .thermostat-freshness { grid-column: 1 / -1; }\n#Tab_Glasgow_thermostat .thermostat-readings .thermostat-gauge:nth-last-child(-n+2),\n#Tab_Glasgow_thermostat .thermostat-history .thermostat-chart { grid-column: span 3; }\n\n#Tab_Glasgow_thermostat md-card {\n    box-sizing: border-box;\n    width: 100% !important;\n    height: auto !important;\n    padding: var(--dash-gap);\n    background: var(--dash-card);\n    border: 1px solid var(--dash-border);\n    border-radius: var(--dash-radius);\n    box-shadow: none;\n}\n\n#Tab_Glasgow_thermostat .thermostat-freshness {\n    justify-content: flex-start;\n    flex-wrap: wrap;\n    gap: .25rem .625rem;\n    padding-inline: .75rem;\n    font-size: .875rem;\n}\n\n.thermostat-freshness .label { color: var(--dash-muted); }\n.thermostat-freshness .value { font-weight: 600; }\n\n#Tab_Glasgow_thermostat .thermostat-gauge {\n    min-height: var(--dash-gauge-height);\n    padding-block: .375rem .125rem;\n}\n\n.thermostat-gauge [id^=\"gauge_\"] { max-width: 100%; }\n.thermostat-current .label { color: var(--dash-teal); }\n.thermostat-setpoint .label { color: var(--dash-amber); }\n\n#Tab_Glasgow_thermostat .thermostat-chart {\n    height: var(--dash-chart-height) !important;\n}\n\n#Tab_Glasgow_thermostat .nr-dashboard-chart {\n    height: calc(100% - 2.75rem);\n    width: 100%;\n    padding: 0;\n}\n\n#Tab_Glasgow_thermostat .nr-dashboard-gauge-title,\n#Tab_Glasgow_thermostat .nr-dashboard-chart-title {\n    font-size: .9375rem;\n    font-weight: 650;\n}\n\n@media (max-width: 52rem) {\n    #Tab_Glasgow_thermostat .thermostat-readings .thermostat-gauge { grid-column: span 3; }\n    #Tab_Glasgow_thermostat .thermostat-readings .thermostat-setpoint:nth-child(n),\n    #Tab_Glasgow_thermostat .thermostat-history .thermostat-chart { grid-column: 1 / -1; }\n}\n\n@media (max-width: 34rem) {\n    #Tab_Glasgow_thermostat { width: calc(100% - 1rem); }\n    #Tab_Glasgow_thermostat .thermostat-readings .thermostat-gauge:nth-child(n) { grid-column: 1 / -1; }\n}\n</style>",
+    "templateScope": "global",
+    "x": 950,
+    "y": 665,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "b_context_note",
+    "z": "part_b_dashboard",
+    "type": "comment",
+    "name": "Persistent GLOBAL context bridges B and C; local FLOW context stays on device",
+    "info": "",
+    "x": 440,
+    "y": 540,
+    "wires": []
+  },
+  {
+    "id": "b_catch",
+    "z": "part_b_dashboard",
+    "type": "catch",
+    "name": "OWM failure (no key/payload logging)",
+    "scope": [
+      "b_owm"
+    ],
+    "uncaught": false,
+    "x": 220,
+    "y": 650,
+    "wires": [
+      [
+        "b_error"
+      ]
+    ]
+  },
+  {
+    "id": "b_error",
+    "z": "part_b_dashboard",
+    "type": "function",
+    "name": "Keep cached values; mark OWM unavailable",
+    "func": "node.status({fill:\"yellow\",shape:\"ring\",text:\"OWM unavailable; retaining last good context\"});\nreturn null;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 590,
+    "y": 650,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "mqtt_server",
+    "type": "mqtt-broker",
+    "name": "MQTT broker · server",
+    "broker": "127.0.0.1",
+    "port": "1883",
+    "clientid": "glasgow-thermostat-server",
+    "autoConnect": true,
+    "usetls": false,
+    "protocolVersion": "4",
+    "keepalive": "60",
+    "cleansession": true,
+    "autoUnsubscribe": true,
+    "birthTopic": "",
+    "birthQos": "0",
+    "birthPayload": "",
+    "birthMsg": {},
+    "closeTopic": "",
+    "closeQos": "0",
+    "closePayload": "",
+    "closeMsg": {},
+    "willTopic": "",
+    "willQos": "0",
+    "willPayload": "",
+    "willMsg": {},
+    "sessionExpiry": ""
+  },
+  {
+    "id": "cfg_ui_tab",
+    "type": "ui_tab",
+    "name": "Glasgow thermostat",
+    "icon": "dashboard",
+    "disabled": false,
+    "hidden": false
+  },
+  {
+    "id": "group_live",
+    "type": "ui_group",
+    "name": "Weather and setpoint",
+    "tab": "cfg_ui_tab",
+    "order": 1,
+    "disp": true,
+    "width": "18",
+    "collapse": false,
+    "className": "thermostat-readings"
+  },
+  {
+    "id": "group_history",
+    "type": "ui_group",
+    "name": "Last hour",
+    "tab": "cfg_ui_tab",
+    "order": 2,
+    "disp": true,
+    "width": "18",
+    "collapse": false,
+    "className": "thermostat-history"
+  },
+  {
+    "id": "g_current",
+    "z": "part_b_dashboard",
+    "type": "ui_gauge",
+    "name": "Current temperature",
+    "group": "group_live",
+    "order": 2,
+    "width": 6,
+    "height": 3,
+    "gtype": "gage",
+    "title": "Current temperature",
+    "label": "°C",
+    "format": "{{value}}",
+    "min": "-20",
+    "max": "40",
+    "colors": [
+      "#83ddd0",
+      "#83ddd0",
+      "#83ddd0"
+    ],
+    "seg1": "",
+    "seg2": "",
+    "diff": false,
+    "className": "thermostat-gauge thermostat-current",
+    "x": 960,
+    "y": 230,
+    "wires": []
+  },
+  {
+    "id": "g_max",
+    "z": "part_b_dashboard",
+    "type": "ui_gauge",
+    "name": "Maximum temperature",
+    "group": "group_live",
+    "order": 3,
+    "width": 6,
+    "height": 3,
+    "gtype": "gage",
+    "title": "Maximum temperature",
+    "label": "°C",
+    "format": "{{value}}",
+    "min": "-20",
+    "max": "40",
+    "colors": [
+      "#83ddd0",
+      "#83ddd0",
+      "#83ddd0"
+    ],
+    "seg1": "",
+    "seg2": "",
+    "diff": false,
+    "className": "thermostat-gauge",
+    "x": 960,
+    "y": 280,
+    "wires": []
+  },
+  {
+    "id": "g_min",
+    "z": "part_b_dashboard",
+    "type": "ui_gauge",
+    "name": "Minimum temperature",
+    "group": "group_live",
+    "order": 4,
+    "width": 6,
+    "height": 3,
+    "gtype": "gage",
+    "title": "Minimum temperature",
+    "label": "°C",
+    "format": "{{value}}",
+    "min": "-20",
+    "max": "40",
+    "colors": [
+      "#83ddd0",
+      "#83ddd0",
+      "#83ddd0"
+    ],
+    "seg1": "",
+    "seg2": "",
+    "diff": false,
+    "className": "thermostat-gauge",
+    "x": 960,
+    "y": 330,
+    "wires": []
+  },
+  {
+    "id": "g_humidity",
+    "z": "part_b_dashboard",
+    "type": "ui_gauge",
+    "name": "Relative humidity",
+    "group": "group_live",
+    "order": 5,
+    "width": 9,
+    "height": 3,
+    "gtype": "gage",
+    "title": "Relative humidity",
+    "label": "%",
+    "format": "{{value}}",
+    "min": "0",
+    "max": "100",
+    "colors": [
+      "#9fbaf0",
+      "#9fbaf0",
+      "#9fbaf0"
+    ],
+    "seg1": "",
+    "seg2": "",
+    "diff": false,
+    "className": "thermostat-gauge",
+    "x": 960,
+    "y": 380,
+    "wires": []
+  },
+  {
+    "id": "g_setpoint",
+    "z": "part_b_dashboard",
+    "type": "ui_gauge",
+    "name": "Thermostat setpoint",
+    "group": "group_live",
+    "order": 6,
+    "width": 9,
+    "height": 3,
+    "gtype": "gage",
+    "title": "Thermostat setpoint",
+    "label": "°C",
+    "format": "{{value}}",
+    "min": "-10",
+    "max": "35",
+    "colors": [
+      "#ffc28f",
+      "#ffc28f",
+      "#ffc28f"
+    ],
+    "seg1": "",
+    "seg2": "",
+    "diff": false,
+    "className": "thermostat-gauge thermostat-setpoint",
+    "x": 960,
+    "y": 430,
+    "wires": []
+  },
+  {
+    "id": "c_temperature",
+    "z": "part_b_dashboard",
+    "type": "ui_chart",
+    "name": "Temperature (°C)",
+    "group": "group_history",
+    "order": 1,
+    "width": 9,
+    "height": 5,
+    "label": "Temperature (°C)",
+    "chartType": "line",
+    "legend": "false",
+    "xformat": "HH:mm",
+    "interpolate": "linear",
+    "nodata": "Awaiting OpenWeatherMap observations",
+    "dot": true,
+    "ymin": "-20",
+    "ymax": "40",
+    "removeOlder": "1",
+    "removeOlderPoints": "",
+    "removeOlderUnit": "3600",
+    "cutout": 0,
+    "useOneColor": false,
+    "useUTC": false,
+    "colors": [
+      "#83ddd0"
+    ],
+    "outputs": 1,
+    "useDifferentColor": false,
+    "className": "thermostat-chart",
+    "x": 970,
+    "y": 490,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "c_humidity",
+    "z": "part_b_dashboard",
+    "type": "ui_chart",
+    "name": "Humidity (%)",
+    "group": "group_history",
+    "order": 2,
+    "width": 9,
+    "height": 5,
+    "label": "Humidity (%)",
+    "chartType": "line",
+    "legend": "false",
+    "xformat": "HH:mm",
+    "interpolate": "linear",
+    "nodata": "Awaiting OpenWeatherMap observations",
+    "dot": true,
+    "ymin": "0",
+    "ymax": "100",
+    "removeOlder": "1",
+    "removeOlderPoints": "",
+    "removeOlderUnit": "3600",
+    "cutout": 0,
+    "useOneColor": false,
+    "useUTC": false,
+    "colors": [
+      "#9fbaf0"
+    ],
+    "outputs": 1,
+    "useDifferentColor": false,
+    "className": "thermostat-chart",
+    "x": 970,
+    "y": 550,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "cfg_ui_base",
+    "type": "ui_base",
+    "theme": {
+      "name": "theme-dark",
+      "lightTheme": {
+        "default": "#69d2c7",
+        "baseColor": "#69d2c7",
+        "baseFont": "system-ui, sans-serif",
+        "edited": false
+      },
+      "darkTheme": {
+        "default": "#69d2c7",
+        "baseColor": "#83ddd0",
+        "baseFont": "system-ui, sans-serif",
+        "edited": true
+      },
+      "customTheme": {
+        "name": "Glasgow",
+        "default": "#69d2c7",
+        "baseColor": "#83ddd0",
+        "baseFont": "system-ui, sans-serif"
+      },
+      "themeState": {
+        "base-color": {
+          "default": "#69d2c7",
+          "value": "#83ddd0",
+          "edited": true
+        },
+        "base-font": {
+          "value": "system-ui, sans-serif"
+        },
+        "page-titlebar-backgroundColor": {
+          "value": "#224644",
+          "edited": true
+        },
+        "page-backgroundColor": {
+          "value": "#121617",
+          "edited": true
+        },
+        "page-sidebar-backgroundColor": {
+          "value": "#1a2021",
+          "edited": true
+        },
+        "group-textColor": {
+          "value": "#dce8e7",
+          "edited": true
+        },
+        "group-borderColor": {
+          "value": "#374446",
+          "edited": true
+        },
+        "group-backgroundColor": {
+          "value": "#1a2021",
+          "edited": true
+        },
+        "widget-textColor": {
+          "value": "#f1f6f5",
+          "edited": true
+        },
+        "widget-backgroundColor": {
+          "value": "#224644",
+          "edited": true
+        },
+        "widget-borderColor": {
+          "value": "#202829",
+          "edited": true
+        }
+      },
+      "angularTheme": {
+        "primary": "teal",
+        "accents": "orange",
+        "warn": "red",
+        "background": "grey",
+        "palette": "dark"
+      }
+    },
+    "site": {
+      "name": "Glasgow Thermostat · OWM",
+      "hideToolbar": "false",
+      "allowSwipe": "false",
+      "lockMenu": "false",
+      "allowTempTheme": "false",
+      "dateFormat": "DD/MM/YYYY",
+      "sizes": {
+        "sx": 48,
+        "sy": 48,
+        "gx": 6,
+        "gy": 6,
+        "cx": 6,
+        "cy": 6,
+        "px": 0,
+        "py": 0
+      }
+    }
+  }
+]

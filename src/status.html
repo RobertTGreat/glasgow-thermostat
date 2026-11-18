@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Glasgow thermostat · Heating {{view.heating}}</title>
+    <!-- status-styles -->
+</head>
+<body>
+<main>
+    <header class="status-header">
+        <h1>Glasgow thermostat</h1>
+        <a href="/ui/">Open dashboard</a>
+    </header>
+
+    <section class="hero {{view.stateClass}}" aria-labelledby="heating-label">
+        <div class="radiator" aria-hidden="true">
+            <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+                <rect x="9" y="23" width="46" height="28" rx="5"/>
+                <path d="M19 25v24m13-24v24m13-24v24M16 51v6m32-6v6"/>
+                <path class="radiator-heat" d="M20 17c-5-6 5-6 0-12m12 12c-5-6 5-6 0-12m12 12c-5-6 5-6 0-12"/>
+            </svg>
+        </div>
+        <div>
+            <h2 id="heating-label">Heating status</h2>
+            <p class="heating">{{view.heating}}</p>
+            <p class="explanation">{{view.explanation}}</p>
+        </div>
+    </section>
+
+    <dl class="metrics">
+        <div class="metric metric-temperature metric-setpoint">
+            <dt>Thermostat setpoint</dt>
+            <dd>{{view.setpoint}}</dd>
+            <dd class="metric-source">Sense HAT simulator via MQTT</dd>
+        </div>
+        <div class="metric metric-temperature metric-outdoor">
+            <dt>Current Glasgow temperature</dt>
+            <dd>{{view.temperature}}</dd>
+            <dd class="metric-source">OpenWeatherMap</dd>
+        </div>
+        <div class="metric metric-weather">
+            <dt>Weather description</dt>
+            <dd>{{{view.description}}}</dd>
+        </div>
+        <div class="metric">
+            <dt>Sunrise</dt>
+            <dd>{{{view.sunrise}}}</dd>
+        </div>
+        <div class="metric">
+            <dt>Sunset</dt>
+            <dd>{{{view.sunset}}}</dd>
+        </div>
+    </dl>
+
+    <footer class="status-footer">
+        <div class="status-updates">
+            <p>{{view.freshness}}</p>
+            <a href="/status">Refresh status</a>
+        </div>
+        <dl class="timestamps">
+            <div><dt>Weather observed</dt><dd>{{{view.observed}}}</dd></div>
+            <div><dt>Setpoint changed</dt><dd>{{{view.setpointUpdated}}}</dd></div>
+            <div><dt>Page requested</dt><dd>{{{view.requested}}}</dd></div>
+        </dl>
+        <p class="status-note">Times are local to Glasgow. This demonstration simulates the heating decision.</p>
+    </footer>
+</main>
+</body>
+</html>

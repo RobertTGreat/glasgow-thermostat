@@ -1,0 +1,218 @@
+[
+  {
+    "id": "part_a_device",
+    "type": "tab",
+    "label": "A · Local Sense HAT thermostat",
+    "disabled": false,
+    "info": "Run locally only. Simulator temperature +/- control = setpoint (-10–35 C, a demonstration range allowing OFF in cold Glasgow weather). Matrix = OWM Glasgow weather, NOT the simulator temperature. Cached values use localfilesystem context."
+  },
+  {
+    "id": "a_note",
+    "z": "part_a_device",
+    "type": "comment",
+    "name": "LOCAL: /sensehat-simulator · +/- = setpoint · matrix = Glasgow",
+    "info": "",
+    "x": 390,
+    "y": 50,
+    "wires": []
+  },
+  {
+    "id": "a_sense_in",
+    "z": "part_a_device",
+    "type": "rpi-sensehatsim in",
+    "name": "Simulator setpoint +/- control",
+    "motion": false,
+    "env": true,
+    "stick": false,
+    "x": 160,
+    "y": 130,
+    "wires": [
+      [
+        "a_setpoint"
+      ]
+    ]
+  },
+  {
+    "id": "a_heartbeat",
+    "z": "part_a_device",
+    "type": "inject",
+    "name": "Republish cached setpoint · 60 s",
+    "props": [
+      {
+        "p": "topic",
+        "vt": "str"
+      },
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "60",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 2,
+    "topic": "heartbeat",
+    "payload": "",
+    "payloadType": "date",
+    "x": 180,
+    "y": 200,
+    "wires": [
+      [
+        "a_setpoint"
+      ]
+    ]
+  },
+  {
+    "id": "a_setpoint",
+    "z": "part_a_device",
+    "type": "function",
+    "name": "Validate + cache setpoint → JSON",
+    "func": "// Embedded in exported Function nodes: no external JS module is needed on import.\nconst DEVICE_ID = \"dev-thermo-001\";\nconst WEATHER_MAX_AGE = 1800000;\nconst isNumber = (v) => typeof v === \"number\" && Number.isFinite(v);\nconst inRange = (v, min, max) => isNumber(v) && v >= min && v <= max;\nfunction parseObject(value) {\n    if (typeof value === \"string\") {\n        if (value.length > 32768) throw Error(\"Message exceeds 32 KiB\");\n        value = JSON.parse(value);\n    }\n    if (!value || typeof value !== \"object\" || Array.isArray(value)) throw Error(\"Expected a JSON object\");\n    return value;\n}\nfunction validWeather(w) {\n    return w && w.schemaVersion === 1 && w.deviceId === DEVICE_ID &&\n        w.city === \"Glasgow\" && inRange(w.tempc, -60, 60) &&\n        inRange(w.tempMinc, -60, 60) && inRange(w.tempMaxc, -60, 60) &&\n        w.tempMinc <= w.tempc && w.tempc <= w.tempMaxc &&\n        inRange(w.humidity, 0, 100) && typeof w.description === \"string\" &&\n        w.description.length > 0 && w.description.length <= 200 &&\n        inRange(w.sunrise, 1, 1e11) && inRange(w.sunset, 1, 1e11) &&\n        w.sunrise < w.sunset && inRange(w.timestamp, 1e12, Date.now() + 300000) &&\n        inRange(w.receivedAt, 1e12, Date.now() + 300000);\n}\nfunction weatherFresh(w) {\n    return validWeather(w) && Date.now() - w.timestamp <= WEATHER_MAX_AGE &&\n        Date.now() - w.receivedAt <= WEATHER_MAX_AGE;\n}\nfunction validSetpoint(s) {\n    return s && s.schemaVersion === 1 && s.deviceId === DEVICE_ID &&\n        s.unit === \"C\" && inRange(s.setpointC, -10, 35) &&\n        inRange(s.timestamp, 1e12, Date.now() + 300000);\n}\nfunction reject(reason) {\n    node.status({fill:\"yellow\", shape:\"ring\", text:reason});\n    // Do not echo untrusted payloads/credentials into logs.\n    node.warn(reason);\n    return null;\n}\n\n// The simulator's temperature +/- control is the thermostat setpoint control.\n// Environment messages arrive each second; publish every actual change, not every tick.\nconst previous = flow.get(\"device.setpoint\");\nlet setpointC;\nif (msg.topic === \"heartbeat\") {\n    if (!validSetpoint(previous)) return null; // Do not invent a reading before the simulator starts.\n    setpointC = previous.setpointC;\n} else {\n    const value = msg.payload?.temperature;\n    if (!inRange(value, -10, 35)) return reject(\"Setpoint must be a number between -10 and 35 C\");\n    setpointC = Number(value.toFixed(1));\n    if (validSetpoint(previous) && setpointC === previous.setpointC) return null;\n}\nconst changed = !validSetpoint(previous) || previous.setpointC !== setpointC;\nconst value = changed ? {\n    schemaVersion:1, deviceId:DEVICE_ID, setpointC, unit:\"C\",\n    timestamp:Math.max(Date.now(), (previous?.timestamp || 0) + 1)\n} : previous;\nflow.set(\"device.setpoint\", value);\nnode.status({fill:\"green\", shape:\"dot\", text:setpointC + \" C setpoint | MQTT JSON\"});\nreturn {payload:JSON.stringify(value)};\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 490,
+    "y": 130,
+    "wires": [
+      [
+        "a_mqtt_setpoint"
+      ]
+    ]
+  },
+  {
+    "id": "a_mqtt_setpoint",
+    "z": "part_a_device",
+    "type": "mqtt out",
+    "name": "Setpoint → cloud · QoS 1 retained",
+    "topic": "glasgow-thermostat/dev-thermo-001/control/setpoint",
+    "qos": "1",
+    "retain": "true",
+    "respTopic": "",
+    "contentType": "application/json",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "mqtt_device",
+    "x": 820,
+    "y": 130,
+    "wires": []
+  },
+  {
+    "id": "a_mqtt_weather",
+    "z": "part_a_device",
+    "type": "mqtt in",
+    "name": "Glasgow weather ← cloud",
+    "topic": "glasgow-thermostat/dev-thermo-001/weather/glasgow",
+    "qos": "1",
+    "datatype": "json",
+    "broker": "mqtt_device",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 170,
+    "y": 330,
+    "wires": [
+      [
+        "a_temperature"
+      ]
+    ]
+  },
+  {
+    "id": "a_scroll",
+    "z": "part_a_device",
+    "type": "inject",
+    "name": "Repeat latest temperature · 12 s",
+    "props": [
+      {
+        "p": "topic",
+        "vt": "str"
+      },
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "12",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 2,
+    "topic": "scroll-cached",
+    "payload": "",
+    "payloadType": "date",
+    "x": 180,
+    "y": 400,
+    "wires": [
+      [
+        "a_temperature"
+      ]
+    ]
+  },
+  {
+    "id": "a_temperature",
+    "z": "part_a_device",
+    "type": "function",
+    "name": "Validate + cache + format “15 C”",
+    "func": "// Embedded in exported Function nodes: no external JS module is needed on import.\nconst DEVICE_ID = \"dev-thermo-001\";\nconst WEATHER_MAX_AGE = 1800000;\nconst isNumber = (v) => typeof v === \"number\" && Number.isFinite(v);\nconst inRange = (v, min, max) => isNumber(v) && v >= min && v <= max;\nfunction parseObject(value) {\n    if (typeof value === \"string\") {\n        if (value.length > 32768) throw Error(\"Message exceeds 32 KiB\");\n        value = JSON.parse(value);\n    }\n    if (!value || typeof value !== \"object\" || Array.isArray(value)) throw Error(\"Expected a JSON object\");\n    return value;\n}\nfunction validWeather(w) {\n    return w && w.schemaVersion === 1 && w.deviceId === DEVICE_ID &&\n        w.city === \"Glasgow\" && inRange(w.tempc, -60, 60) &&\n        inRange(w.tempMinc, -60, 60) && inRange(w.tempMaxc, -60, 60) &&\n        w.tempMinc <= w.tempc && w.tempc <= w.tempMaxc &&\n        inRange(w.humidity, 0, 100) && typeof w.description === \"string\" &&\n        w.description.length > 0 && w.description.length <= 200 &&\n        inRange(w.sunrise, 1, 1e11) && inRange(w.sunset, 1, 1e11) &&\n        w.sunrise < w.sunset && inRange(w.timestamp, 1e12, Date.now() + 300000) &&\n        inRange(w.receivedAt, 1e12, Date.now() + 300000);\n}\nfunction weatherFresh(w) {\n    return validWeather(w) && Date.now() - w.timestamp <= WEATHER_MAX_AGE &&\n        Date.now() - w.receivedAt <= WEATHER_MAX_AGE;\n}\nfunction validSetpoint(s) {\n    return s && s.schemaVersion === 1 && s.deviceId === DEVICE_ID &&\n        s.unit === \"C\" && inRange(s.setpointC, -10, 35) &&\n        inRange(s.timestamp, 1e12, Date.now() + 300000);\n}\nfunction reject(reason) {\n    node.status({fill:\"yellow\", shape:\"ring\", text:reason});\n    // Do not echo untrusted payloads/credentials into logs.\n    node.warn(reason);\n    return null;\n}\n\ntry {\n    let w;\n    if (msg.topic === \"scroll-cached\") {\n        w = flow.get(\"device.weather\");\n        if (!weatherFresh(w)) {\n            node.status({fill:\"yellow\",shape:\"ring\",text:\"Waiting for fresh Glasgow weather\"});\n            return null;\n        }\n    } else {\n        w = parseObject(msg.payload);\n        if (!weatherFresh(w)) return reject(\"Rejected invalid or stale MQTT weather\");\n        const previous = flow.get(\"device.weather\");\n        if (previous && w.timestamp < previous.timestamp) return reject(\"Ignored older MQTT weather\");\n        // Only keep expected, non-sensitive fields.\n        w = {\n            schemaVersion:1, deviceId:DEVICE_ID, city:\"Glasgow\", tempc:w.tempc,\n            tempMinc:w.tempMinc, tempMaxc:w.tempMaxc, humidity:w.humidity,\n            description:w.description, sunrise:w.sunrise, sunset:w.sunset,\n            timestamp:w.timestamp, receivedAt:w.receivedAt\n        };\n        flow.set(\"device.weather\", w);\n    }\n    const text = w.tempc + \" C\";\n    node.status({fill:\"green\",shape:\"dot\",text:\"OWM Glasgow: \" + text});\n    return {payload:text, color:\"cyan\", background:\"black\", speed:3};\n} catch (_) {\n    return reject(\"Malformed MQTT weather JSON; keeping last good reading\");\n}\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 500,
+    "y": 330,
+    "wires": [
+      [
+        "a_matrix"
+      ]
+    ]
+  },
+  {
+    "id": "a_matrix",
+    "z": "part_a_device",
+    "type": "rpi-sensehatsim out",
+    "name": "Scroll live Glasgow temperature",
+    "x": 830,
+    "y": 330,
+    "wires": []
+  },
+  {
+    "id": "a_privacy",
+    "z": "part_a_device",
+    "type": "comment",
+    "name": "Public broker: no identity, keys or passwords in messages",
+    "info": "",
+    "x": 410,
+    "y": 490,
+    "wires": []
+  },
+  {
+    "id": "mqtt_device",
+    "type": "mqtt-broker",
+    "name": "MQTT broker · device",
+    "broker": "127.0.0.1",
+    "port": "1883",
+    "clientid": "glasgow-thermostat-device",
+    "autoConnect": true,
+    "usetls": false,
+    "protocolVersion": "4",
+    "keepalive": "60",
+    "cleansession": true,
+    "autoUnsubscribe": true,
+    "birthTopic": "",
+    "birthQos": "0",
+    "birthPayload": "",
+    "birthMsg": {},
+    "closeTopic": "",
+    "closeQos": "0",
+    "closePayload": "",
+    "closeMsg": {},
+    "willTopic": "",
+    "willQos": "0",
+    "willPayload": "",
+    "willMsg": {},
+    "sessionExpiry": ""
+  }
+]

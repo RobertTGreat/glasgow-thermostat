@@ -1,0 +1,106 @@
+[
+  {
+    "id": "part_c_http",
+    "type": "tab",
+    "label": "C · Cloud HTTP /status",
+    "disabled": false,
+    "info": "The HTTP handler reads context at request time. ON iff temperature < setpoint; equality is OFF. Missing/stale data returns a labelled 503 WAITING page. Sunrise/sunset use Europe/London, including DST."
+  },
+  {
+    "id": "c_note",
+    "z": "part_c_http",
+    "type": "comment",
+    "name": "GET /status → read current context → HTML → response",
+    "info": "",
+    "x": 420,
+    "y": 70,
+    "wires": []
+  },
+  {
+    "id": "c_in",
+    "z": "part_c_http",
+    "type": "http in",
+    "name": "GET /status",
+    "url": "/status",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 130,
+    "y": 190,
+    "wires": [
+      [
+        "c_view"
+      ]
+    ]
+  },
+  {
+    "id": "c_view",
+    "z": "part_c_http",
+    "type": "function",
+    "name": "Context + heating rule + London times",
+    "func": "// Embedded in exported Function nodes: no external JS module is needed on import.\nconst DEVICE_ID = \"dev-thermo-001\";\nconst WEATHER_MAX_AGE = 1800000;\nconst isNumber = (v) => typeof v === \"number\" && Number.isFinite(v);\nconst inRange = (v, min, max) => isNumber(v) && v >= min && v <= max;\nfunction parseObject(value) {\n    if (typeof value === \"string\") {\n        if (value.length > 32768) throw Error(\"Message exceeds 32 KiB\");\n        value = JSON.parse(value);\n    }\n    if (!value || typeof value !== \"object\" || Array.isArray(value)) throw Error(\"Expected a JSON object\");\n    return value;\n}\nfunction validWeather(w) {\n    return w && w.schemaVersion === 1 && w.deviceId === DEVICE_ID &&\n        w.city === \"Glasgow\" && inRange(w.tempc, -60, 60) &&\n        inRange(w.tempMinc, -60, 60) && inRange(w.tempMaxc, -60, 60) &&\n        w.tempMinc <= w.tempc && w.tempc <= w.tempMaxc &&\n        inRange(w.humidity, 0, 100) && typeof w.description === \"string\" &&\n        w.description.length > 0 && w.description.length <= 200 &&\n        inRange(w.sunrise, 1, 1e11) && inRange(w.sunset, 1, 1e11) &&\n        w.sunrise < w.sunset && inRange(w.timestamp, 1e12, Date.now() + 300000) &&\n        inRange(w.receivedAt, 1e12, Date.now() + 300000);\n}\nfunction weatherFresh(w) {\n    return validWeather(w) && Date.now() - w.timestamp <= WEATHER_MAX_AGE &&\n        Date.now() - w.receivedAt <= WEATHER_MAX_AGE;\n}\nfunction validSetpoint(s) {\n    return s && s.schemaVersion === 1 && s.deviceId === DEVICE_ID &&\n        s.unit === \"C\" && inRange(s.setpointC, -10, 35) &&\n        inRange(s.timestamp, 1e12, Date.now() + 300000);\n}\nfunction reject(reason) {\n    node.status({fill:\"yellow\", shape:\"ring\", text:reason});\n    // Do not echo untrusted payloads/credentials into logs.\n    node.warn(reason);\n    return null;\n}\n\nconst w = global.get(\"thermostat.weather\");\nconst s = global.get(\"thermostat.setpoint\");\nconst fresh = weatherFresh(w);\nconst haveSetpoint = validSetpoint(s);\nconst ready = fresh && haveSetpoint;\nconst escapeHtml = value => String(value).replace(/[&<>\"']/g, c => ({\"&\":\"&amp;\",\"<\":\"&lt;\",\">\":\"&gt;\",'\"':\"&quot;\",\"'\":\"&#39;\"}[c]));\nconst readable = (milliseconds) => new Intl.DateTimeFormat(\"en-GB\", {\n    timeZone:\"Europe/London\", day:\"2-digit\", month:\"short\", year:\"numeric\",\n    hour:\"2-digit\", minute:\"2-digit\", second:\"2-digit\", timeZoneName:\"short\"\n}).format(new Date(milliseconds));\n// Equality belongs to OFF. No rounded strings, simulated sensor reading, or stale weather in the rule.\nconst heating = ready ? (w.tempc < s.setpointC ? \"ON\" : \"OFF\") : \"WAITING\";\nmsg.view = {\n    heating, stateClass:heating === \"ON\" ? \"on\" : heating === \"OFF\" ? \"off\" : \"waiting\",\n    setpoint:haveSetpoint ? s.setpointC + \" °C\" : \"Not received yet\",\n    temperature:fresh ? w.tempc + \" °C\" : \"Unavailable / stale\",\n    description:validWeather(w) ? escapeHtml(w.description) : \"Awaiting OWM\",\n    sunrise:validWeather(w) ? escapeHtml(readable(w.sunrise * 1000)) : \"Awaiting OWM\",\n    sunset:validWeather(w) ? escapeHtml(readable(w.sunset * 1000)) : \"Awaiting OWM\",\n    observed:validWeather(w) ? escapeHtml(readable(w.timestamp)) : \"Not yet received\",\n    setpointUpdated:haveSetpoint ? escapeHtml(readable(s.timestamp)) : \"Not yet received\",\n    requested:escapeHtml(readable(Date.now())),\n    explanation:!ready ? \"Waiting for a device setpoint and current weather.\" :\n        heating === \"ON\" ? \"The outdoor temperature is below the setpoint.\" :\n        \"The outdoor temperature is at or above the setpoint.\",\n    freshness:fresh ? \"Weather observation is current\" : \"Waiting for an up-to-date weather observation\"\n};\nmsg.statusCode = ready ? 200 : 503;\nmsg.headers = {\n    \"Content-Type\":\"text/html; charset=utf-8\", \"Cache-Control\":\"no-store\",\n    \"X-Content-Type-Options\":\"nosniff\", \"Referrer-Policy\":\"no-referrer\",\n    \"Content-Security-Policy\":\"default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'\"\n};\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 410,
+    "y": 190,
+    "wires": [
+      [
+        "c_html"
+      ]
+    ]
+  },
+  {
+    "id": "c_html",
+    "z": "part_c_http",
+    "type": "template",
+    "name": "Labelled heating status HTML",
+    "field": "payload",
+    "fieldType": "msg",
+    "format": "handlebars",
+    "syntax": "mustache",
+    "template": "<!doctype html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"utf-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n    <title>Glasgow thermostat · Heating {{view.heating}}</title>\n    <style>\n:root {\n    color-scheme: dark;\n    --page: #121617;\n    --panel: #1a2021;\n    --border: #374446;\n    --text: #f1f6f5;\n    --muted: #b4c3c3;\n    --teal: #83ddd0;\n    --amber: #ffc28f;\n    --space-xs: .5rem;\n    --space-sm: .75rem;\n    --space-md: 1rem;\n    --space-lg: 1.5rem;\n    --space-xl: 2rem;\n    --radius: .75rem;\n}\n\n* { box-sizing: border-box; }\n\nbody {\n    margin: 0;\n    background: var(--page);\n    color: var(--text);\n    font: 1rem/1.5 system-ui, sans-serif;\n}\n\nmain {\n    width: min(100%, 58rem);\n    margin-inline: auto;\n    padding: var(--space-lg) clamp(.875rem, 4vw, 2rem) var(--space-xl);\n}\n\n.status-header, .status-updates {\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n    flex-wrap: wrap;\n    gap: var(--space-xs) var(--space-md);\n}\n\n.status-header { margin-bottom: var(--space-md); }\n\nh1 {\n    margin: 0;\n    font-size: clamp(1.5rem, 4vw, 2.25rem);\n    line-height: 1.15;\n}\n\na {\n    display: inline-flex;\n    align-items: center;\n    min-height: 2.75rem;\n    padding-inline: var(--space-sm);\n    border: 1px solid var(--border);\n    border-radius: var(--radius);\n    color: var(--teal);\n    font-size: .875rem;\n    font-weight: 650;\n    text-decoration: none;\n}\n\na:hover { background: var(--panel); text-decoration: underline; }\na:focus-visible { outline: 2px solid var(--teal); outline-offset: 3px; }\n\n.hero {\n    --state: var(--muted);\n    display: flex;\n    align-items: center;\n    gap: clamp(.875rem, 4vw, 2rem);\n    padding: clamp(1rem, 4vw, 1.75rem);\n    margin-bottom: var(--space-md);\n    background: var(--panel);\n    border: 1px solid color-mix(in srgb, var(--state) 45%, var(--border));\n    border-radius: var(--radius);\n}\n\n.hero.on { --state: var(--amber); }\n.hero.off { --state: var(--teal); }\n\n.radiator {\n    flex: none;\n    display: grid;\n    width: clamp(3rem, 10vw, 5rem);\n    aspect-ratio: 1;\n    place-items: center;\n    color: var(--state);\n    border: 1px solid var(--border);\n    border-radius: var(--radius);\n}\n\n.radiator svg { width: 68%; }\n.radiator-heat { visibility: hidden; }\n.on .radiator-heat { visibility: visible; }\n\n.hero h2 {\n    margin: 0;\n    color: var(--text);\n    font-size: .9375rem;\n    font-weight: 650;\n}\n\n.heating {\n    margin: 0;\n    color: var(--state);\n    font-size: clamp(2rem, 7vw, 3.75rem);\n    font-weight: 750;\n    line-height: 1.1;\n}\n\n.explanation { margin: var(--space-xs) 0 0; color: var(--muted); }\n\n.metrics, .timestamps {\n    display: grid;\n    gap: var(--space-sm);\n    margin: 0;\n}\n\n.metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }\n\n.metric {\n    min-width: 0;\n    padding: var(--space-md);\n    background: var(--panel);\n    border: 1px solid var(--border);\n    border-radius: var(--radius);\n}\n\n.metric dt, .timestamps dt {\n    margin-bottom: .25rem;\n    color: var(--muted);\n    font-size: .875rem;\n}\n\n.metric dd, .timestamps dd {\n    margin: 0;\n    overflow-wrap: anywhere;\n    font-variant-numeric: tabular-nums;\n}\n\n.metric dd { font-size: 1.125rem; font-weight: 600; }\n.metric-temperature dd:first-of-type { font-size: clamp(1.5rem, 4vw, 2.25rem); }\n.metric-setpoint dd:first-of-type { color: var(--amber); }\n.metric-outdoor dd:first-of-type { color: var(--teal); }\n.metric .metric-source { color: var(--muted); font-size: .8125rem; font-weight: 400; }\n.metric-weather { grid-column: 1 / -1; }\n.metric-weather dd::first-letter { text-transform: uppercase; }\n\n.status-footer { margin-top: var(--space-md); }\n.status-updates { padding-bottom: var(--space-sm); border-bottom: 1px solid var(--border); }\n.status-updates p { margin: 0; font-size: .875rem; }\n.timestamps { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: var(--space-sm); }\n.timestamps dd { font-size: .875rem; }\n.status-note { color: var(--muted); font-size: .8125rem; margin: var(--space-md) 0 0; }\n\n@media (max-width: 34rem) {\n    .metrics, .timestamps { grid-template-columns: 1fr; }\n    .hero { align-items: flex-start; }\n}\n\n@media (forced-colors: active) {\n    .hero, .metric, .radiator, a { border-color: CanvasText; }\n    a:focus-visible { outline-color: Highlight; }\n}\n</style>\n</head>\n<body>\n<main>\n    <header class=\"status-header\">\n        <h1>Glasgow thermostat</h1>\n        <a href=\"/ui/\">Open dashboard</a>\n    </header>\n\n    <section class=\"hero {{view.stateClass}}\" aria-labelledby=\"heating-label\">\n        <div class=\"radiator\" aria-hidden=\"true\">\n            <svg viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\">\n                <rect x=\"9\" y=\"23\" width=\"46\" height=\"28\" rx=\"5\"/>\n                <path d=\"M19 25v24m13-24v24m13-24v24M16 51v6m32-6v6\"/>\n                <path class=\"radiator-heat\" d=\"M20 17c-5-6 5-6 0-12m12 12c-5-6 5-6 0-12m12 12c-5-6 5-6 0-12\"/>\n            </svg>\n        </div>\n        <div>\n            <h2 id=\"heating-label\">Heating status</h2>\n            <p class=\"heating\">{{view.heating}}</p>\n            <p class=\"explanation\">{{view.explanation}}</p>\n        </div>\n    </section>\n\n    <dl class=\"metrics\">\n        <div class=\"metric metric-temperature metric-setpoint\">\n            <dt>Thermostat setpoint</dt>\n            <dd>{{view.setpoint}}</dd>\n            <dd class=\"metric-source\">Sense HAT simulator via MQTT</dd>\n        </div>\n        <div class=\"metric metric-temperature metric-outdoor\">\n            <dt>Current Glasgow temperature</dt>\n            <dd>{{view.temperature}}</dd>\n            <dd class=\"metric-source\">OpenWeatherMap</dd>\n        </div>\n        <div class=\"metric metric-weather\">\n            <dt>Weather description</dt>\n            <dd>{{{view.description}}}</dd>\n        </div>\n        <div class=\"metric\">\n            <dt>Sunrise</dt>\n            <dd>{{{view.sunrise}}}</dd>\n        </div>\n        <div class=\"metric\">\n            <dt>Sunset</dt>\n            <dd>{{{view.sunset}}}</dd>\n        </div>\n    </dl>\n\n    <footer class=\"status-footer\">\n        <div class=\"status-updates\">\n            <p>{{view.freshness}}</p>\n            <a href=\"/status\">Refresh status</a>\n        </div>\n        <dl class=\"timestamps\">\n            <div><dt>Weather observed</dt><dd>{{{view.observed}}}</dd></div>\n            <div><dt>Setpoint changed</dt><dd>{{{view.setpointUpdated}}}</dd></div>\n            <div><dt>Page requested</dt><dd>{{{view.requested}}}</dd></div>\n        </dl>\n        <p class=\"status-note\">Times are local to Glasgow. This demonstration simulates the heating decision.</p>\n    </footer>\n</main>\n</body>\n</html>\n",
+    "output": "str",
+    "x": 720,
+    "y": 190,
+    "wires": [
+      [
+        "c_response"
+      ]
+    ]
+  },
+  {
+    "id": "c_response",
+    "z": "part_c_http",
+    "type": "http response",
+    "name": "HTML · no-store · 200 / 503",
+    "statusCode": "",
+    "headers": {},
+    "x": 720,
+    "y": 290,
+    "wires": []
+  },
+  {
+    "id": "c_rule",
+    "z": "part_c_http",
+    "type": "comment",
+    "name": "ON: tempc < setpoint · OFF: tempc ≥ setpoint · WAITING: missing/stale data",
+    "info": "",
+    "x": 450,
+    "y": 390,
+    "wires": []
+  },
+  {
+    "id": "c_timezone",
+    "z": "part_c_http",
+    "type": "comment",
+    "name": "OWM Unix seconds × 1000 → Intl Europe/London (GMT / BST)",
+    "info": "",
+    "x": 420,
+    "y": 450,
+    "wires": []
+  }
+]

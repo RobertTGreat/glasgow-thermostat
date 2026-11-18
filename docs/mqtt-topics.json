@@ -1,0 +1,10 @@
+{
+  "broker": "127.0.0.1",
+  "port": 1883,
+  "qos": 1,
+  "retained": true,
+  "topics": {
+    "weather": "glasgow-thermostat/dev-thermo-001/weather/glasgow",
+    "setpoint": "glasgow-thermostat/dev-thermo-001/control/setpoint"
+  }
+}

@@ -1,0 +1,116 @@
+#Tab_Glasgow_thermostat {
+    --dash-panel: #1a2021;
+    --dash-card: #202829;
+    --dash-border: #374446;
+    --dash-muted: #b4c3c3;
+    --dash-teal: #83ddd0;
+    --dash-amber: #ffc28f;
+    --dash-gap: .5rem;
+    --dash-radius: .75rem;
+    --dash-gauge-height: 9.5rem;
+    --dash-chart-height: 15.5rem;
+    display: grid;
+    gap: .875rem;
+    width: min(calc(100% - 2rem), 62rem);
+    margin: 1rem auto 1.5rem;
+}
+
+/* Dashboard 3 writes its panel and widget geometry inline. Override it so
+   the native widgets can reflow without horizontal scrolling. */
+#Tab_Glasgow_thermostat,
+#Tab_Glasgow_thermostat .nr-dashboard-cardcontainer {
+    height: auto !important;
+    min-height: 0 !important;
+}
+
+#Tab_Glasgow_thermostat ui-card-panel,
+#Tab_Glasgow_thermostat .nr-dashboard-cardcontainer > * {
+    position: static;
+    min-width: 0;
+}
+
+#Tab_Glasgow_thermostat ui-card-panel {
+    padding: .75rem;
+    background: var(--dash-panel);
+    border: 1px solid var(--dash-border);
+    border-radius: var(--dash-radius);
+}
+
+#Tab_Glasgow_thermostat .nr-dashboard-cardtitle {
+    width: auto !important;
+    min-height: 0;
+    max-height: none;
+    margin: 0 0 .625rem;
+    font-size: 1rem;
+    font-weight: 650;
+}
+
+#Tab_Glasgow_thermostat .nr-dashboard-cardcontainer {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: var(--dash-gap);
+    width: auto !important;
+}
+
+#Tab_Glasgow_thermostat .thermostat-readings .thermostat-gauge { grid-column: span 2; }
+#Tab_Glasgow_thermostat .thermostat-freshness { grid-column: 1 / -1; }
+#Tab_Glasgow_thermostat .thermostat-readings .thermostat-gauge:nth-last-child(-n+2),
+#Tab_Glasgow_thermostat .thermostat-history .thermostat-chart { grid-column: span 3; }
+
+#Tab_Glasgow_thermostat md-card {
+    box-sizing: border-box;
+    width: 100% !important;
+    height: auto !important;
+    padding: var(--dash-gap);
+    background: var(--dash-card);
+    border: 1px solid var(--dash-border);
+    border-radius: var(--dash-radius);
+    box-shadow: none;
+}
+
+#Tab_Glasgow_thermostat .thermostat-freshness {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: .25rem .625rem;
+    padding-inline: .75rem;
+    font-size: .875rem;
+}
+
+.thermostat-freshness .label { color: var(--dash-muted); }
+.thermostat-freshness .value { font-weight: 600; }
+
+#Tab_Glasgow_thermostat .thermostat-gauge {
+    min-height: var(--dash-gauge-height);
+    padding-block: .375rem .125rem;
+}
+
+.thermostat-gauge [id^="gauge_"] { max-width: 100%; }
+.thermostat-current .label { color: var(--dash-teal); }
+.thermostat-setpoint .label { color: var(--dash-amber); }
+
+#Tab_Glasgow_thermostat .thermostat-chart {
+    height: var(--dash-chart-height) !important;
+}
+
+#Tab_Glasgow_thermostat .nr-dashboard-chart {
+    height: calc(100% - 2.75rem);
+    width: 100%;
+    padding: 0;
+}
+
+#Tab_Glasgow_thermostat .nr-dashboard-gauge-title,
+#Tab_Glasgow_thermostat .nr-dashboard-chart-title {
+    font-size: .9375rem;
+    font-weight: 650;
+}
+
+@media (max-width: 52rem) {
+    #Tab_Glasgow_thermostat .thermostat-readings .thermostat-gauge { grid-column: span 3; }
+    #Tab_Glasgow_thermostat .thermostat-readings .thermostat-setpoint:nth-child(n),
+    #Tab_Glasgow_thermostat .thermostat-history .thermostat-chart { grid-column: 1 / -1; }
+}
+
+@media (max-width: 34rem) {
+    #Tab_Glasgow_thermostat { width: calc(100% - 1rem); }
+    #Tab_Glasgow_thermostat .thermostat-readings .thermostat-gauge:nth-child(n) { grid-column: 1 / -1; }
+}

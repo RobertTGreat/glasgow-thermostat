@@ -1,0 +1,8 @@
+{
+  "deviceId": "dev-thermo-001",
+  "brokerPort": 1883,
+  "brokerTls": false,
+  "weatherMaxAgeMinutes": 30,
+  "topicRoot": "glasgow-thermostat",
+  "broker": "127.0.0.1"
+}

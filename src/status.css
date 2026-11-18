@@ -1,0 +1,163 @@
+:root {
+    color-scheme: dark;
+    --page: #121617;
+    --panel: #1a2021;
+    --border: #374446;
+    --text: #f1f6f5;
+    --muted: #b4c3c3;
+    --teal: #83ddd0;
+    --amber: #ffc28f;
+    --space-xs: .5rem;
+    --space-sm: .75rem;
+    --space-md: 1rem;
+    --space-lg: 1.5rem;
+    --space-xl: 2rem;
+    --radius: .75rem;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text);
+    font: 1rem/1.5 system-ui, sans-serif;
+}
+
+main {
+    width: min(100%, 58rem);
+    margin-inline: auto;
+    padding: var(--space-lg) clamp(.875rem, 4vw, 2rem) var(--space-xl);
+}
+
+.status-header, .status-updates {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-xs) var(--space-md);
+}
+
+.status-header { margin-bottom: var(--space-md); }
+
+h1 {
+    margin: 0;
+    font-size: clamp(1.5rem, 4vw, 2.25rem);
+    line-height: 1.15;
+}
+
+a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    padding-inline: var(--space-sm);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--teal);
+    font-size: .875rem;
+    font-weight: 650;
+    text-decoration: none;
+}
+
+a:hover { background: var(--panel); text-decoration: underline; }
+a:focus-visible { outline: 2px solid var(--teal); outline-offset: 3px; }
+
+.hero {
+    --state: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: clamp(.875rem, 4vw, 2rem);
+    padding: clamp(1rem, 4vw, 1.75rem);
+    margin-bottom: var(--space-md);
+    background: var(--panel);
+    border: 1px solid color-mix(in srgb, var(--state) 45%, var(--border));
+    border-radius: var(--radius);
+}
+
+.hero.on { --state: var(--amber); }
+.hero.off { --state: var(--teal); }
+
+.radiator {
+    flex: none;
+    display: grid;
+    width: clamp(3rem, 10vw, 5rem);
+    aspect-ratio: 1;
+    place-items: center;
+    color: var(--state);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.radiator svg { width: 68%; }
+.radiator-heat { visibility: hidden; }
+.on .radiator-heat { visibility: visible; }
+
+.hero h2 {
+    margin: 0;
+    color: var(--text);
+    font-size: .9375rem;
+    font-weight: 650;
+}
+
+.heating {
+    margin: 0;
+    color: var(--state);
+    font-size: clamp(2rem, 7vw, 3.75rem);
+    font-weight: 750;
+    line-height: 1.1;
+}
+
+.explanation { margin: var(--space-xs) 0 0; color: var(--muted); }
+
+.metrics, .timestamps {
+    display: grid;
+    gap: var(--space-sm);
+    margin: 0;
+}
+
+.metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.metric {
+    min-width: 0;
+    padding: var(--space-md);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.metric dt, .timestamps dt {
+    margin-bottom: .25rem;
+    color: var(--muted);
+    font-size: .875rem;
+}
+
+.metric dd, .timestamps dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
+}
+
+.metric dd { font-size: 1.125rem; font-weight: 600; }
+.metric-temperature dd:first-of-type { font-size: clamp(1.5rem, 4vw, 2.25rem); }
+.metric-setpoint dd:first-of-type { color: var(--amber); }
+.metric-outdoor dd:first-of-type { color: var(--teal); }
+.metric .metric-source { color: var(--muted); font-size: .8125rem; font-weight: 400; }
+.metric-weather { grid-column: 1 / -1; }
+.metric-weather dd::first-letter { text-transform: uppercase; }
+
+.status-footer { margin-top: var(--space-md); }
+.status-updates { padding-bottom: var(--space-sm); border-bottom: 1px solid var(--border); }
+.status-updates p { margin: 0; font-size: .875rem; }
+.timestamps { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: var(--space-sm); }
+.timestamps dd { font-size: .875rem; }
+.status-note { color: var(--muted); font-size: .8125rem; margin: var(--space-md) 0 0; }
+
+@media (max-width: 34rem) {
+    .metrics, .timestamps { grid-template-columns: 1fr; }
+    .hero { align-items: flex-start; }
+}
+
+@media (forced-colors: active) {
+    .hero, .metric, .radiator, a { border-color: CanvasText; }
+    a:focus-visible { outline-color: Highlight; }
+}

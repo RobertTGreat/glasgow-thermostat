@@ -1,0 +1,20 @@
+{
+  "name": "theme-dark",
+  "lightTheme": {"default":"#69d2c7","baseColor":"#69d2c7","baseFont":"system-ui, sans-serif","edited":false},
+  "darkTheme": {"default":"#69d2c7","baseColor":"#83ddd0","baseFont":"system-ui, sans-serif","edited":true},
+  "customTheme": {"name":"Glasgow","default":"#69d2c7","baseColor":"#83ddd0","baseFont":"system-ui, sans-serif"},
+  "themeState": {
+    "base-color": {"default":"#69d2c7","value":"#83ddd0","edited":true},
+    "base-font": {"value":"system-ui, sans-serif"},
+    "page-titlebar-backgroundColor": {"value":"#224644","edited":true},
+    "page-backgroundColor": {"value":"#121617","edited":true},
+    "page-sidebar-backgroundColor": {"value":"#1a2021","edited":true},
+    "group-textColor": {"value":"#dce8e7","edited":true},
+    "group-borderColor": {"value":"#374446","edited":true},
+    "group-backgroundColor": {"value":"#1a2021","edited":true},
+    "widget-textColor": {"value":"#f1f6f5","edited":true},
+    "widget-backgroundColor": {"value":"#224644","edited":true},
+    "widget-borderColor": {"value":"#202829","edited":true}
+  },
+  "angularTheme": {"primary":"teal","accents":"orange","warn":"red","background":"grey","palette":"dark"}
+}
